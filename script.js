@@ -1,5 +1,6 @@
 // ============ FIREBASE INITIALIZATION ============
 let db = null;
+let auth = null;
 let firebaseReady = false;
 
 function initializeFirebase() {
@@ -12,6 +13,7 @@ function initializeFirebase() {
     }
 
     db = firebase.database();
+    auth = firebase.auth();
     firebaseReady = true;
     console.log('Firebase initialized successfully');
 }
@@ -313,9 +315,33 @@ function switchLoginTab(tab) {
 function loginAdmin() {
     const password = document.getElementById('admin-password').value;
     if (password === 'admin123') {
-        currentUser = { isAdmin: true };
-        showAdminDashboard();
-        logTransaction('SYSTEM', 'Admin Login', 'Administrator logged in', 'Admin');
+        // Authenticate with Firebase
+        const adminEmail = 'admin@atlas-internal';
+        const adminPassword = 'atlas_admin_' + password;
+
+        auth.signInWithEmailAndPassword(adminEmail, adminPassword)
+            .then(userCredential => {
+                currentUser = { isAdmin: true, uid: userCredential.user.uid };
+                showAdminDashboard();
+                logTransaction('SYSTEM', 'Admin Login', 'Administrator logged in', 'Admin');
+            })
+            .catch(error => {
+                // If user doesn't exist, create account
+                if (error.code === 'auth/user-not-found') {
+                    auth.createUserWithEmailAndPassword(adminEmail, adminPassword)
+                        .then(userCredential => {
+                            currentUser = { isAdmin: true, uid: userCredential.user.uid };
+                            showAdminDashboard();
+                            logTransaction('SYSTEM', 'Admin Login', 'Administrator logged in', 'Admin');
+                        })
+                        .catch(err => {
+                            console.error('Auth error:', err);
+                            alert('Authentication error. Please try again.');
+                        });
+                } else {
+                    alert('Invalid admin password');
+                }
+            });
     } else {
         alert('Invalid admin password');
     }
@@ -324,7 +350,7 @@ function loginAdmin() {
 function loginStaff() {
     const cafeName = document.getElementById('staff-cafe').value.trim();
     const password = document.getElementById('staff-password').value;
-    
+
     if (!cafeName) {
         alert('Please enter café name');
         return;
@@ -341,19 +367,49 @@ function loginStaff() {
         return;
     }
 
-    currentUser = {
-        cafeName,
-        isStaff: true,
-        auditAccess: false
-    };
-    showManagerDashboard();
-    logTransaction(cafeName, 'Staff Login', 'Staff member logged in', 'Staff');
+    // Authenticate with Firebase
+    const staffEmail = cafeName.toLowerCase().replace(/\s+/g, '.') + '@atlas-staff';
+    const staffPasswordAuth = 'staff_' + password;
+
+    auth.signInWithEmailAndPassword(staffEmail, staffPasswordAuth)
+        .then(userCredential => {
+            currentUser = {
+                cafeName,
+                isStaff: true,
+                auditAccess: false,
+                uid: userCredential.user.uid
+            };
+            showManagerDashboard();
+            logTransaction(cafeName, 'Staff Login', 'Staff member logged in', 'Staff');
+        })
+        .catch(error => {
+            // If user doesn't exist, create account
+            if (error.code === 'auth/user-not-found') {
+                auth.createUserWithEmailAndPassword(staffEmail, staffPasswordAuth)
+                    .then(userCredential => {
+                        currentUser = {
+                            cafeName,
+                            isStaff: true,
+                            auditAccess: false,
+                            uid: userCredential.user.uid
+                        };
+                        showManagerDashboard();
+                        logTransaction(cafeName, 'Staff Login', 'Staff member logged in', 'Staff');
+                    })
+                    .catch(err => {
+                        console.error('Auth error:', err);
+                        alert('Authentication error. Please try again.');
+                    });
+            } else {
+                alert('Authentication error. Please try again.');
+            }
+        });
 }
 
 function loginAudit() {
     const cafeName = document.getElementById('audit-cafe').value.trim();
     const password = document.getElementById('audit-password').value;
-    
+
     if (!cafeName) {
         alert('Please enter café name');
         return;
@@ -370,16 +426,55 @@ function loginAudit() {
         return;
     }
 
-    currentUser = {
-        cafeName,
-        isStaff: true,
-        auditAccess: true
-    };
-    showManagerDashboard();
-    logTransaction(cafeName, 'Audit Manager Login', 'Audit manager logged in', 'Audit Manager');
+    // Authenticate with Firebase
+    const auditEmail = cafeName.toLowerCase().replace(/\s+/g, '.') + '@atlas-audit';
+    const auditPasswordAuth = 'audit_' + password;
+
+    auth.signInWithEmailAndPassword(auditEmail, auditPasswordAuth)
+        .then(userCredential => {
+            currentUser = {
+                cafeName,
+                isStaff: true,
+                auditAccess: true,
+                uid: userCredential.user.uid
+            };
+            showManagerDashboard();
+            logTransaction(cafeName, 'Audit Manager Login', 'Audit manager logged in', 'Audit Manager');
+        })
+        .catch(error => {
+            // If user doesn't exist, create account
+            if (error.code === 'auth/user-not-found') {
+                auth.createUserWithEmailAndPassword(auditEmail, auditPasswordAuth)
+                    .then(userCredential => {
+                        currentUser = {
+                            cafeName,
+                            isStaff: true,
+                            auditAccess: true,
+                            uid: userCredential.user.uid
+                        };
+                        showManagerDashboard();
+                        logTransaction(cafeName, 'Audit Manager Login', 'Audit manager logged in', 'Audit Manager');
+                    })
+                    .catch(err => {
+                        console.error('Auth error:', err);
+                        alert('Authentication error. Please try again.');
+                    });
+            } else {
+                alert('Authentication error. Please try again.');
+            }
+        });
 }
 
 function logout() {
+    // Sign out from Firebase
+    if (auth) {
+        auth.signOut().then(() => {
+            console.log('Signed out from Firebase');
+        }).catch(error => {
+            console.error('Error signing out:', error);
+        });
+    }
+
     currentUser = null;
     document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
     document.getElementById('login-stage').classList.add('active');
