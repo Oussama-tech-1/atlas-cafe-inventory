@@ -1,3 +1,41 @@
+// ============ FIREBASE INITIALIZATION ============
+let db = null;
+let firebaseReady = false;
+
+function initializeFirebase() {
+    const firebaseConfig = {
+        databaseURL: "https://atlas-cafe-inventory-default-rtdb.firebaseio.com"
+    };
+
+    if (!firebase.apps.length) {
+        firebase.initializeApp(firebaseConfig);
+    }
+
+    db = firebase.database();
+    firebaseReady = true;
+    console.log('Firebase initialized successfully');
+}
+
+// Initialize Firebase when page loads
+window.addEventListener('DOMContentLoaded', () => {
+    // Try to initialize Firebase
+    try {
+        initializeFirebase();
+        // Give Firebase a moment to fully initialize, then start listeners
+        setTimeout(() => {
+            loadCafesFromStorage(); // Load from storage first for instant UI
+            loadTransactionsFromStorage();
+            initializeCafesListener(); // Then sync with Firebase
+            initializeTransactionsListener();
+        }, 500);
+    } catch (error) {
+        console.warn('Firebase initialization warning:', error);
+        // Fall back to localStorage
+        loadCafesFromStorage();
+        loadTransactionsFromStorage();
+    }
+});
+
 // ============ DATA MANAGEMENT ============
 function getDefaultDepts() {
     return {
@@ -65,38 +103,129 @@ function getDefaultDepts() {
     };
 }
 
-function loadCafes() {
+// In-memory cache for cafes
+let cafesCache = {};
+
+// Initialize cafes cache from Firebase with real-time listener
+function initializeCafesListener() {
+    if (!firebaseReady || !db) return;
+
+    db.ref('cafes').on('value', snapshot => {
+        if (snapshot.exists()) {
+            cafesCache = snapshot.val();
+            console.log('Cafes updated from Firebase:', Object.keys(cafesCache).length, 'cafés');
+            // Update displays if user is logged in
+            if (currentUser) {
+                updateTransactionDisplays();
+                if (currentUser.isAdmin) {
+                    displayAdminCafes();
+                } else if (currentUser.cafeName) {
+                    displayDepartments();
+                    updateCafeTransactions();
+                }
+            }
+        } else {
+            cafesCache = {};
+        }
+    }, error => {
+        console.error('Error listening to cafes:', error);
+        // Fall back to localStorage
+        loadCafesFromStorage();
+    });
+}
+
+function loadCafesFromStorage() {
     try {
         const stored = localStorage.getItem('atlas_cafes');
-        return stored ? JSON.parse(stored) : {};
+        cafesCache = stored ? JSON.parse(stored) : {};
+        return cafesCache;
     } catch (e) {
         console.error('Error loading cafés:', e);
         return {};
     }
 }
 
+function loadCafes() {
+    // Return cached data (which is kept in sync with Firebase)
+    return cafesCache;
+}
+
 function saveCafes(cafes) {
     try {
+        // Update local cache immediately
+        cafesCache = cafes;
+
+        // Save to localStorage as fallback
         localStorage.setItem('atlas_cafes', JSON.stringify(cafes));
+
+        // Save to Firebase if ready
+        if (firebaseReady && db) {
+            db.ref('cafes').set(cafes).catch(error => {
+                console.error('Error saving to Firebase:', error);
+                alert('Error syncing with cloud. Using local storage.');
+            });
+        }
     } catch (e) {
         console.error('Error saving cafés:', e);
         alert('Error saving data. Storage may be full.');
     }
 }
 
-function loadTransactions() {
+// In-memory cache for transactions
+let transactionsCache = [];
+
+// Initialize transactions cache from Firebase with real-time listener
+function initializeTransactionsListener() {
+    if (!firebaseReady || !db) return;
+
+    db.ref('transactions').on('value', snapshot => {
+        if (snapshot.exists()) {
+            transactionsCache = snapshot.val();
+            console.log('Transactions updated from Firebase:', transactionsCache.length, 'entries');
+            // Update displays if user is logged in
+            if (currentUser) {
+                updateTransactionDisplays();
+            }
+        } else {
+            transactionsCache = [];
+        }
+    }, error => {
+        console.error('Error listening to transactions:', error);
+        // Fall back to localStorage
+        loadTransactionsFromStorage();
+    });
+}
+
+function loadTransactionsFromStorage() {
     try {
         const stored = localStorage.getItem('atlas_transactions');
-        return stored ? JSON.parse(stored) : [];
+        transactionsCache = stored ? JSON.parse(stored) : [];
+        return transactionsCache;
     } catch (e) {
         console.error('Error loading transactions:', e);
         return [];
     }
 }
 
+function loadTransactions() {
+    // Return cached data (which is kept in sync with Firebase)
+    return transactionsCache;
+}
+
 function saveTransactions(transactions) {
     try {
+        // Update local cache immediately
+        transactionsCache = transactions;
+
+        // Save to localStorage as fallback
         localStorage.setItem('atlas_transactions', JSON.stringify(transactions));
+
+        // Save to Firebase if ready
+        if (firebaseReady && db) {
+            db.ref('transactions').set(transactions).catch(error => {
+                console.error('Error saving transactions to Firebase:', error);
+            });
+        }
     } catch (e) {
         console.error('Error saving transactions:', e);
     }
